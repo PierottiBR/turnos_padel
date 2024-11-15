@@ -1,6 +1,6 @@
 import streamlit as st
 from streamlit_option_menu import option_menu
-import re
+
 # DB Imports
 import sqlite3
 
@@ -16,10 +16,7 @@ def obtener_deportes():
 
 deportes = obtener_deportes()
 
-# Función para validar el formato del email con expresiones regulares
-def validate_email(email):
-    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-    return bool(re.match(pattern, email))
+
 
 # Guardar el estado en session_state
 if 'deporte_seleccionado' not in st.session_state:
