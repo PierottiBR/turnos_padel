@@ -1,6 +1,5 @@
 import streamlit as st
 from streamlit_option_menu import option_menu
-from send_email import send_whatsapp_message
 import re
 # DB Imports
 import sqlite3
@@ -8,24 +7,19 @@ import sqlite3
 name = 'Complejo Deportivo Dos'
 icono = r'assets\ico.ico'
 
-# Conexión a la base de datos
-conn = sqlite3.connect('complejodos.db', check_same_thread=False)
-cursor = conn.cursor()
+# Conexión a la base de datos (ahora con "with" para garantizar el cierre correcto)
+def obtener_deportes():
+    with sqlite3.connect('complejodos.db', check_same_thread=False) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT DISTINCT deporte FROM deportes")
+        return [row[0] for row in cursor.fetchall()]
 
-# Obtener los deportes disponibles desde la base de datos
-cursor.execute("SELECT DISTINCT deporte FROM deportes")
-deportes = [row[0] for row in cursor.fetchall()]
-
-# Cerrar la conexión cuando ya no sea necesaria
-conn.close()
+deportes = obtener_deportes()
 
 # Función para validar el formato del email con expresiones regulares
 def validate_email(email):
     pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-    if re.match(pattern, email):
-        return True
-    else:
-        return False
+    return bool(re.match(pattern, email))
 
 # Guardar el estado en session_state
 if 'deporte_seleccionado' not in st.session_state:
@@ -35,7 +29,7 @@ if 'canchas' not in st.session_state:
 
 st.set_page_config(page_title=name, page_icon=icono, layout='centered')
 
-st.image('assets\complejodos.png')
+st.image('assets/complejodos.png')
 st.title(name, anchor=False)
 st.text('''         
                     Canchas de Fútbol 5-7, Tenis y Pádel ⚽️🎾
@@ -68,14 +62,12 @@ if selected == 'Reservar':
         st.write(f"Reservar turno para **{st.session_state.deporte_seleccionado}**")
 
         # Conectar a la base de datos para obtener las canchas disponibles para el deporte seleccionado
-        conn = sqlite3.connect('complejodos.db', check_same_thread=False)
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            SELECT DISTINCT canchas FROM deportes WHERE deporte = ?
-        """, (st.session_state.deporte_seleccionado,))
-        st.session_state.canchas = [row[0] for row in cursor.fetchall()]
-        conn.close()
+        with sqlite3.connect('complejodos.db', check_same_thread=False) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT DISTINCT canchas FROM deportes WHERE deporte = ?
+            """, (st.session_state.deporte_seleccionado,))
+            st.session_state.canchas = [row[0] for row in cursor.fetchall()]
 
         if st.session_state.canchas:
             c1, c2 = st.columns(2)
@@ -87,24 +79,22 @@ if selected == 'Reservar':
             notas = c2.text_area('Notas')
 
             # Conectar nuevamente a la base de datos para obtener las horas disponibles para el deporte y cancha seleccionados
-            conn = sqlite3.connect('complejodos.db', check_same_thread=False)
-            cursor = conn.cursor()
+            with sqlite3.connect('complejodos.db', check_same_thread=False) as conn:
+                cursor = conn.cursor()
 
-            cursor.execute("""
-                SELECT hora FROM deportes WHERE deporte = ? AND canchas = ?
-            """, (st.session_state.deporte_seleccionado, canchas))
-            horas_disponibles = [row[0] for row in cursor.fetchall()]
+                cursor.execute("""
+                    SELECT hora FROM deportes WHERE deporte = ? AND canchas = ?
+                """, (st.session_state.deporte_seleccionado, canchas))
+                horas_disponibles = [row[0] for row in cursor.fetchall()]
 
-            # Consultar las horas ya reservadas para la fecha seleccionada
-            cursor.execute("""
-                SELECT hora FROM reservas WHERE fecha = ?
-            """, (str(fecha),))
-            horas_reservadas = [row[0] for row in cursor.fetchall()]
+                # Consultar las horas ya reservadas para la fecha seleccionada
+                cursor.execute("""
+                    SELECT hora FROM reservas WHERE fecha = ?
+                """, (str(fecha),))
+                horas_reservadas = [row[0] for row in cursor.fetchall()]
 
-            # Filtrar las horas disponibles eliminando las horas reservadas
-            horas_disponibles = [hora for hora in horas_disponibles if hora not in horas_reservadas]
-
-            conn.close()
+                # Filtrar las horas disponibles eliminando las horas reservadas
+                horas_disponibles = [hora for hora in horas_disponibles if hora not in horas_reservadas]
 
             # Mostrar la hora solo si hay horas disponibles
             if horas_disponibles:
@@ -122,25 +112,16 @@ if selected == 'Reservar':
                 else:
                     try:
                         # Crear conexión y cursor dentro del bloque de inserción
-                        conn = sqlite3.connect('complejodos.db', check_same_thread=False)
-                        cursor = conn.cursor()
+                        with sqlite3.connect('complejodos.db', check_same_thread=False) as conn:
+                            cursor = conn.cursor()
 
-                        # Insertar la reserva en la base de datos
-                        cursor.execute('''
-                            INSERT INTO reservas (nombre, telefono, fecha, notas, cancha, hora, deporte)
-                            VALUES (?, ?, ?, ?, ?, ?, ?)
-                        ''', (nombre, telefono, str(fecha), notas, canchas, hora, st.session_state.deporte_seleccionado))
+                            # Insertar la reserva en la base de datos
+                            cursor.execute('''
+                                INSERT INTO reservas (nombre, telefono, fecha, notas, cancha, hora, deporte)
+                                VALUES (?, ?, ?, ?, ?, ?, ?)
+                            ''', (nombre, telefono, str(fecha), notas, canchas, hora, st.session_state.deporte_seleccionado))
 
-                        conn.commit()
-
-                        # Enviar mensaje de WhatsApp después de guardar la reserva
-                        send_whatsapp_message(
-                            to_phone_number=telefono,
-                            nombre=nombre,
-                            fecha=fecha,
-                            hora=hora,
-                            pista=canchas
-                        )
+                            conn.commit()
 
                         st.success('Pista reservada correctamente y mensaje de WhatsApp enviado')
                         st.write(f"**Detalles de la reserva**")
@@ -154,7 +135,3 @@ if selected == 'Reservar':
                         st.error(f"Error al guardar la reserva: {e}")
                     except Exception as e:
                         st.error(f"Error al enviar el mensaje de WhatsApp: {e}")
-                    finally:
-                        conn.close()
-        else:
-            st.warning("No hay canchas disponibles para este deporte.")
